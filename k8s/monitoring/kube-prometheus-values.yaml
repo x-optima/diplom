@@ -1,0 +1,168 @@
+# Значения Helm для чарта prometheus-community/kube-prometheus-stack.
+# Устанавливается в пространство имён monitoring.
+
+# Пароль Grafana хранится в Secret grafana-admin, который создаётся
+# скриптом развёртывания из файла .env.
+grafana:
+  enabled: true
+  admin:
+    existingSecret: grafana-admin
+    userKey: admin-user
+    passwordKey: admin-password
+
+  persistence:
+    enabled: false
+
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      cpu: 300m
+      memory: 256Mi
+
+  ingress:
+    enabled: true
+    ingressClassName: nginx
+    path: /
+    hosts:
+      # Имя хоста подставляет скрипт развёртывания.
+      - "${GRAFANA_HOST}"
+
+  grafana.ini:
+    server:
+      root_url: "http://${GRAFANA_HOST}/"
+    analytics:
+      reporting_enabled: false
+      check_for_updates: false
+    security:
+      disable_gravatar: true
+
+  # Набор готовых панелей для кластера; остальные подключаются в интерфейсе.
+  defaultDashboardsEnabled: true
+  sidecar:
+    dashboards:
+      enabled: true
+    datasources:
+      enabled: true
+
+prometheus:
+  enabled: true
+
+  prometheusSpec:
+    replicas: 1
+    retention: 24h
+    retentionSize: 4GB
+
+    resources:
+      requests:
+        cpu: 100m
+        memory: 512Mi
+      limits:
+        cpu: 700m
+        memory: 1Gi
+
+    # Хранилище на узле: срок жизни данных ограничен временем работы кластера.
+    storageSpec: {}
+
+    podAntiAffinity: ""
+    nodeSelector: {}
+    tolerations: []
+
+  # Проверка состояния API-сервера и узлов из состава чарта.
+  additionalServiceMonitors: []
+
+alertmanager:
+  enabled: true
+
+  alertmanagerSpec:
+    replicas: 1
+    retention: 24h
+    resources:
+      requests:
+        cpu: 20m
+        memory: 64Mi
+      limits:
+        cpu: 100m
+        memory: 128Mi
+    storage: {}
+
+  config:
+    global:
+      resolve_timeout: 5m
+
+    route:
+      receiver: default
+      group_by: ["alertname", "namespace"]
+      group_wait: 30s
+      group_interval: 5m
+      repeat_interval: 4h
+
+    receivers:
+      - name: default
+        # Для отправки уведомлений достаточно добавить получателя, например:
+        # webhook_configs:
+        #   - url: "https://example.com/alerts"
+        #     send_resolved: true
+        # или telegram_configs с токеном бота и идентификатором чата.
+
+    inhibit_rules:
+      - source_matchers: ["severity = critical"]
+        target_matchers: ["severity =~ warning|info"]
+        equal: ["alertname", "namespace"]
+
+prometheusOperator:
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      cpu: 200m
+      memory: 256Mi
+
+  admissionWebhooks:
+    enabled: true
+
+  prometheusConfigReloader:
+    resources:
+      requests:
+        cpu: 20m
+        memory: 32Mi
+      limits:
+        cpu: 100m
+        memory: 64Mi
+
+kubeStateMetrics:
+  enabled: true
+
+nodeExporter:
+  enabled: true
+
+# Компоненты управляющего слоя Yandex Cloud недоступны для сбора метрик,
+# поэтому соответствующие задания и правила отключены.
+kubeEtcd:
+  enabled: false
+
+kubeControllerManager:
+  enabled: false
+
+kubeScheduler:
+  enabled: false
+
+kubeProxy:
+  enabled: false
+
+defaultRules:
+  create: true
+  rules:
+    alertmanager: true
+    etcd: false
+    kubeControllerManager: false
+    kubeScheduler: false
+    kubeProxy: false
+    node: true
+    kubernetesApps: true
+    kubernetesResources: true
+    kubernetesStorage: true
+    kubernetesSystem: true
+    network: true

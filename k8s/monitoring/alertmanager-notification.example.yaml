@@ -1,0 +1,18 @@
+# Пример нотификации для Alertmanager: отправка в Telegram.
+# Применяется добавлением в секцию alertmanager.config.values.yaml.
+#
+# В values уже есть получатель default. Чтобы включить уведомления, замените
+# его блок на приведённый ниже и передайте токен и идентификатор чата
+# через Secret, а не в файле.
+#
+# route:
+#   receiver: telegram
+#   group_by: ["alertname", "namespace"]
+#
+# receivers:
+#   - name: telegram
+#     telegram_configs:
+#       - bot_token: "<токен бота>"
+#         chat_id: <идентификатор чата>
+#         parse_mode: HTML
+#         send_resolved: true

@@ -1,0 +1,28 @@
+# Состояние Terraform, рабочая копия лежит в бакете Object Storage
+.terraform/
+*.tfstate
+*.tfstate.*
+.terraform.tfstate.lock.info
+
+# План изменений и журнал сбоя
+*.tfplan
+plan.txt
+crash.log
+crash.*.log
+
+# Переменные с идентификаторами облака, в репозитории только шаблон .example
+*.tfvars
+!*.tfvars.example
+
+# Ключи сервисных аккаунтов
+terraform-sa-key.json
+authorized_key.json
+
+# Параметры доступа к бакету состояния
+backend.hcl
+
+# Пароль Grafana и версия образа для scripts/deploy.sh
+.env
+
+# Заметки
+LONGRID.md

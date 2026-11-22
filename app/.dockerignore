@@ -1,0 +1,9 @@
+.git
+.gitignore
+.github
+README.md
+LONGRID.md
+terraform
+k8s
+screenshots
+*.md
