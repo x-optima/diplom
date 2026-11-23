@@ -26,7 +26,7 @@ TFVARS_FILE="${ROOT_DIR}/terraform/terraform.tfvars"
 # Переменные каждого этапа. Единый файл содержит оба набора, поэтому этапу
 # передаётся только то, что объявлено в его конфигурации.
 BOOTSTRAP_VARS="cloud_id folder_id zone name_prefix state_bucket_name service_account_key_file"
-INFRA_VARS="cloud_id folder_id zones network_cidr subnet_prefix_length vm_image_family vm_image_name vm_user ssh_public_key_path vm_platform_id vm_core_fraction master_cores master_memory master_disk_size worker_count worker_cores worker_memory worker_disk_size registry_name service_account_key_file"
+INFRA_VARS="cloud_id folder_id zones network_cidr subnet_prefix_length vm_image_family vm_user ssh_public_key_path vm_platform_id vm_core_fraction master_cores master_memory master_disk_size worker_count worker_cores worker_memory worker_disk_size registry_name service_account_key_file"
 
 APP_NAMESPACE="app"
 MONITORING_NAMESPACE="monitoring"
@@ -284,8 +284,8 @@ ingress() {
     --timeout 10m
 }
 
-# Внешний адрес управляющей машины: контроллер ingress работает на узлах
-# и занимает порты 80 и 443, поэтому отдельный балансировщик не нужен.
+# Внешний адрес входа: контроллер ingress работает на рабочих узлах и
+# занимает порты 80 и 443, поэтому отдельный балансировщик не нужен.
 master_ip() {
   local ip
   ip="$(terraform -chdir="${INFRA_DIR}" output -raw master_external_ip 2>/dev/null || true)"
@@ -293,12 +293,22 @@ master_ip() {
   printf '%s' "${ip}"
 }
 
+# Адрес для обращения к приложению и Grafana: первый внешний адрес рабочего
+# узла, на котором размещён контроллер.
+ingress_ip() {
+  local ip
+  ip="$(terraform -chdir="${INFRA_DIR}" output -json worker_external_ips 2>/dev/null \
+    | tr -d '[]" ' | cut -d, -f1 || true)"
+  [[ -n "${ip}" ]] && printf '%s' "${ip}" && return 0
+  master_ip
+}
+
 monitoring() {
   require_tool helm
   [[ -n "${GRAFANA_PASSWORD}" ]] || die "задайте GRAFANA_PASSWORD в файле .env"
 
   local ip grafana_host
-  ip="$(master_ip)"
+  ip="$(ingress_ip)"
   grafana_host="grafana.${ip}.nip.io"
 
   log "Установка kube-prometheus-stack в пространство имён ${MONITORING_NAMESPACE}"
@@ -323,24 +333,42 @@ monitoring() {
   kubectl -n "${MONITORING_NAMESPACE}" get pods
 }
 
+# Отдельный сборщик buildx: он держит слои в своём хранилище и не обращается к
+# кешу демона, где остаются сведения о реестрах прошлых сборок. Иначе отправка
+# в новый реестр пытается переиспользовать слои удалённого и завершается
+# ошибкой Registry not found.
+BUILDX_BUILDER="diplom-builder"
+
 build_and_push() {
   require_tool docker
   require_tool yc
 
   local registry_id image
+
+  docker buildx version >/dev/null 2>&1 \
+    || die "не найден плагин buildx (пакет docker-buildx-plugin)"
+
   registry_id="$(terraform -chdir="${INFRA_DIR}" output -raw registry_id)"
   image="cr.yandex/${registry_id}/${APP_NAME}:${APP_VERSION}"
 
   log "Сборка образа ${image}"
   yc container registry configure-docker >/dev/null
-  # Реестр принимает манифест схемы v2, а BuildKit добавляет к образу манифест
-  # проверки происхождения, который реестр не разбирает.
-  DOCKER_BUILDKIT=0 docker build \
+
+  if ! docker buildx inspect "${BUILDX_BUILDER}" >/dev/null 2>&1; then
+    docker buildx create --name "${BUILDX_BUILDER}" --driver docker-container >/dev/null
+  fi
+
+  # Реестр принимает манифест схемы v2, поэтому манифесты проверки
+  # происхождения и состава пакетов не создаются.
+  docker buildx build \
+    --builder "${BUILDX_BUILDER}" \
+    --provenance=false \
+    --sbom=false \
     --build-arg "APP_VERSION=${APP_VERSION}" \
     --build-arg "BUILD_DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
     --tag "${image}" \
+    --push \
     "${ROOT_DIR}/app"
-  docker push "${image}"
 
   BUILT_IMAGE="${image}"
 }
@@ -350,7 +378,7 @@ app() {
   require_tool envsubst
 
   local ip app_host
-  ip="$(master_ip)"
+  ip="$(ingress_ip)"
   app_host="app.${ip}.nip.io"
 
   build_and_push
@@ -358,6 +386,21 @@ app() {
 
   log "Развёртывание приложения ${image}"
   kubectl apply -f "${K8S_DIR}/namespace.yaml"
+
+  # Реестр приватный, а узлы собраны на обычных машинах: права сервисного
+  # аккаунта через метаданные экземпляра containerd не использует, поэтому
+  # ключ доступа передаётся секретом.
+  local key_file="${BOOTSTRAP_DIR}/terraform-sa-key.json"
+  if [[ -f "${key_file}" ]]; then
+    kubectl create secret docker-registry cr-credentials \
+      -n "${APP_NAMESPACE}" \
+      --docker-server=cr.yandex \
+      --docker-username=json_key \
+      --docker-password="$(cat "${key_file}")" \
+      --dry-run=client -o yaml | kubectl apply -f - >/dev/null
+  else
+    log "Ключ ${key_file} не найден: секрет доступа к реестру не обновлён"
+  fi
 
   IMAGE="${image}" APP_HOST="${app_host}" \
     envsubst '${IMAGE} ${APP_HOST}' < "${K8S_DIR}/app/deployment.yaml" | kubectl apply -f -

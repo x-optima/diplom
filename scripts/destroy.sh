@@ -21,7 +21,7 @@ BOOTSTRAP_DIR="${ROOT_DIR}/terraform/bootstrap"
 TFVARS_FILE="${ROOT_DIR}/terraform/terraform.tfvars"
 
 BOOTSTRAP_VARS="cloud_id folder_id zone name_prefix state_bucket_name service_account_key_file"
-INFRA_VARS="cloud_id folder_id zones network_cidr subnet_prefix_length vm_image_family vm_image_name vm_user ssh_public_key_path vm_platform_id vm_core_fraction master_cores master_memory master_disk_size worker_count worker_cores worker_memory worker_disk_size registry_name service_account_key_file"
+INFRA_VARS="cloud_id folder_id zones network_cidr subnet_prefix_length vm_image_family vm_user ssh_public_key_path vm_platform_id vm_core_fraction master_cores master_memory master_disk_size worker_count worker_cores worker_memory worker_disk_size registry_name service_account_key_file"
 
 APP_NAMESPACE="app"
 MONITORING_NAMESPACE="monitoring"
@@ -190,6 +190,20 @@ destroy_bootstrap() {
   if [[ -f "${INFRA_DIR}/backend.hcl" ]]; then
     rm -f "${INFRA_DIR}/backend.hcl"
     log "Файл terraform/infrastructure/backend.hcl удалён"
+  fi
+
+  # В состоянии подготовительного этапа лежит закрытая часть ключа сервисного
+  # аккаунта, в резервной копии — тоже. Аккаунт удалён, файлы не нужны.
+  local state_file
+  for state_file in "${BOOTSTRAP_DIR}/terraform.tfstate" "${BOOTSTRAP_DIR}/terraform.tfstate.backup"; do
+    [[ -f "${state_file}" ]] && rm -f "${state_file}"
+  done
+  log "Локальное состояние подготовительного этапа удалено"
+
+  # Пароль администратора Grafana создаётся заново при следующем развёртывании.
+  if [[ -f "${ROOT_DIR}/.env" ]]; then
+    rm -f "${ROOT_DIR}/.env"
+    log "Файл .env с паролем Grafana удалён"
   fi
 }
 
