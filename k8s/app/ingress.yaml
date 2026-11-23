@@ -11,7 +11,7 @@ spec:
   ingressClassName: nginx
   rules:
     # Имя хоста подставляет скрипт развёртывания: адрес вида
-    # app.<внешний IP балансировщика>.nip.io не требует управления DNS.
+    # app.<внешний IP машины>.nip.io не требует управления DNS.
     - host: "${APP_HOST}"
       http:
         paths:

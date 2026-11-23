@@ -27,8 +27,9 @@ variable "name_prefix" {
 }
 
 variable "state_bucket_name" {
-  description = "Имя бакета для хранения файла состояния Terraform"
+  description = "Имя бакета для файла состояния; пустое значение даёт имя со случайным суффиксом"
   type        = string
+  default     = ""
 }
 
 variable "state_bucket_max_size" {

@@ -1,14 +1,22 @@
 # Значения Helm для чарта ingress-nginx.
-# Контроллер принимает внешний трафик через балансировщик Yandex Cloud.
+# Кластер собран на обычных виртуальных машинах, без драйвера балансировщика
+# облака, поэтому контроллер работает на каждой машине и занимает порты 80 и 443
+# напрямую. Приложение и Grafana доступны по внешнему адресу любой машины.
 
 controller:
-  replicaCount: 2
+  kind: DaemonSet
+
+  # Одна реплика на узел: вторая не нужна и не поместится на порту 80.
+  replicaCount: 1
+
+  hostPort:
+    enabled: true
+    ports:
+      http: 80
+      https: 443
 
   service:
-    type: LoadBalancer
-    externalTrafficPolicy: Local
-    annotations:
-      yandex.cloud/load-balancer-type: "external"
+    type: ClusterIP
 
   ingressClassResource:
     name: nginx
@@ -23,26 +31,23 @@ controller:
       cpu: 300m
       memory: 256Mi
 
-  # Метрики контроллера собирает Prometheus.
+  # Метрики контроллера отдаются на порту 10254, но объект ServiceMonitor
+  # не создаётся: его тип появляется только вместе с Prometheus Operator,
+  # а контроллер ставится раньше.
   metrics:
     enabled: true
     serviceMonitor:
-      enabled: true
-      namespace: monitoring
+      enabled: false
 
   config:
     use-forwarded-headers: "true"
     proxy-body-size: "8m"
     server-tokens: "false"
 
-  topologySpreadConstraints:
-    - maxSkew: 1
-      topologyKey: topology.kubernetes.io/zone
-      whenUnsatisfiable: ScheduleAnyway
-      labelSelector:
-        matchLabels:
-          app.kubernetes.io/name: ingress-nginx
-          app.kubernetes.io/component: controller
+  # На управляющей машине стоит taint control-plane с эффектом NoSchedule,
+  # поэтому DaemonSet занимает только рабочие узлы. Приложение и Grafana
+  # доступны по внешнему адресу любого рабочего узла.
+  tolerations: []
 
   admissionWebhooks:
     enabled: true

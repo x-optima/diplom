@@ -24,5 +24,8 @@ backend.hcl
 # Пароль Grafana и версия образа для scripts/deploy.sh
 .env
 
+# Инвентарь Ansible собирается Terraform из адресов машин
+ansible/inventory.ini
+
 # Заметки
 LONGRID.md

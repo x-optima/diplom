@@ -3,13 +3,12 @@ resource "yandex_container_registry" "main" {
   folder_id = var.folder_id
 }
 
-# Узлы кластера загружают образы приложения из реестра.
+# Машины кластера загружают образы приложения из реестра.
 resource "yandex_container_registry_iam_binding" "puller" {
   registry_id = yandex_container_registry.main.id
   role        = "container-registry.images.puller"
 
   members = [
     "serviceAccount:${data.yandex_iam_service_account.nodes.id}",
-    "serviceAccount:${data.yandex_iam_service_account.k8s.id}",
   ]
 }

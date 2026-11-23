@@ -15,11 +15,23 @@ grafana:
 
   resources:
     requests:
-      cpu: 50m
-      memory: 128Mi
-    limits:
-      cpu: 300m
+      cpu: 100m
       memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+  # Grafana при первом запуске инициализирует хранилище дольше минуты,
+  # поэтому проверка живости начинается позже и допускает больше попыток:
+  # иначе контейнер убивают до того, как поднимется HTTP-сервер.
+  livenessProbe:
+    initialDelaySeconds: 180
+    timeoutSeconds: 10
+    failureThreshold: 10
+  readinessProbe:
+    initialDelaySeconds: 60
+    timeoutSeconds: 10
+    failureThreshold: 20
 
   ingress:
     enabled: true
@@ -51,16 +63,18 @@ prometheus:
 
   prometheusSpec:
     replicas: 1
-    retention: 24h
-    retentionSize: 4GB
+    retention: 12h
+    # Диск рабочего узла — 7 ГБ, поэтому база ограничена 512 МБ: при большем
+    # значении узел уходит в состояние disk-pressure и поды вытесняются.
+    retentionSize: 512MB
 
     resources:
       requests:
         cpu: 100m
-        memory: 512Mi
+        memory: 384Mi
       limits:
-        cpu: 700m
-        memory: 1Gi
+        cpu: 600m
+        memory: 768Mi
 
     # Хранилище на узле: срок жизни данных ограничен временем работы кластера.
     storageSpec: {}
@@ -120,8 +134,13 @@ prometheusOperator:
       cpu: 200m
       memory: 256Mi
 
+  # Проверка объектов при создании требует отдельного пода, задания для
+  # выпуска сертификата и TLS-секрета, поэтому на стенде отключена.
   admissionWebhooks:
-    enabled: true
+    enabled: false
+
+  tls:
+    enabled: false
 
   prometheusConfigReloader:
     resources:
@@ -138,8 +157,9 @@ kubeStateMetrics:
 nodeExporter:
   enabled: true
 
-# Компоненты управляющего слоя Yandex Cloud недоступны для сбора метрик,
-# поэтому соответствующие задания и правила отключены.
+# Компоненты управляющего слоя слушают только внутренний адрес машины,
+# а Prometheus обращается к ним по сети кластера. Для сбора метрик нужна
+# отдельная настройка этих служб, поэтому задания и правила отключены.
 kubeEtcd:
   enabled: false
 

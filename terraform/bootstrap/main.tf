@@ -1,18 +1,10 @@
 locals {
   terraform_sa_name = "${var.name_prefix}-terraform"
-  k8s_sa_name       = "${var.name_prefix}-k8s-agent"
   nodes_sa_name     = "${var.name_prefix}-k8s-nodes"
 
   terraform_sa_roles = [
     "editor",
     "storage.admin",
-  ]
-
-  k8s_cluster_roles = [
-    "k8s.clusters.agent",
-    "vpc.publicAdmin",
-    "load-balancer.admin",
-    "monitoring.editor",
   ]
 
   k8s_nodes_roles = [
@@ -27,14 +19,9 @@ resource "yandex_iam_service_account" "terraform" {
   description = "Сервисный аккаунт для управления инфраструктурой из Terraform"
 }
 
-resource "yandex_iam_service_account" "k8s" {
-  name        = local.k8s_sa_name
-  description = "Сервисный аккаунт мастера Kubernetes: сеть, балансировщик, узлы"
-}
-
 resource "yandex_iam_service_account" "nodes" {
   name        = local.nodes_sa_name
-  description = "Сервисный аккаунт рабочих узлов: загрузка образов и телеметрия"
+  description = "Сервисный аккаунт машин кластера: загрузка образов и телеметрия"
 }
 
 resource "yandex_resourcemanager_folder_iam_member" "terraform" {
@@ -43,14 +30,6 @@ resource "yandex_resourcemanager_folder_iam_member" "terraform" {
   folder_id = var.folder_id
   role      = each.value
   member    = "serviceAccount:${yandex_iam_service_account.terraform.id}"
-}
-
-resource "yandex_resourcemanager_folder_iam_member" "k8s_cluster" {
-  for_each = toset(local.k8s_cluster_roles)
-
-  folder_id = var.folder_id
-  role      = each.value
-  member    = "serviceAccount:${yandex_iam_service_account.k8s.id}"
 }
 
 resource "yandex_resourcemanager_folder_iam_member" "k8s_nodes" {
@@ -80,8 +59,18 @@ resource "local_sensitive_file" "terraform_key" {
   })
 }
 
+# Случайный суффикс имени бакета: имя должно быть уникальным во всём Object
+# Storage, а идентификаторы каталога и облака в имени не нужны.
+resource "random_id" "bucket" {
+  byte_length = 4
+}
+
+locals {
+  state_bucket_name = var.state_bucket_name != "" ? var.state_bucket_name : "${var.name_prefix}-tfstate-${random_id.bucket.hex}"
+}
+
 resource "yandex_storage_bucket" "state" {
-  bucket        = var.state_bucket_name
+  bucket        = local.state_bucket_name
   folder_id     = var.folder_id
   max_size      = var.state_bucket_max_size
   force_destroy = true

@@ -8,25 +8,29 @@ output "subnet_ids" {
   value       = { for zone, subnet in yandex_vpc_subnet.main : zone => subnet.id }
 }
 
-output "cluster_id" {
-  description = "Идентификатор кластера Kubernetes"
-  value       = yandex_kubernetes_cluster.main.id
+output "master_external_ip" {
+  description = "Внешний адрес управляющей машины"
+  value       = yandex_compute_instance.master.network_interface[0].nat_ip_address
 }
 
-output "cluster_external_endpoint" {
-  description = "Внешний адрес API-сервера кластера"
-  value       = yandex_kubernetes_cluster.main.master[0].external_v4_endpoint
+output "master_internal_ip" {
+  description = "Внутренний адрес управляющей машины"
+  value       = yandex_compute_instance.master.network_interface[0].ip_address
 }
 
-output "cluster_ca_certificate" {
-  description = "Сертификат удостоверяющего центра кластера"
-  value       = yandex_kubernetes_cluster.main.master[0].cluster_ca_certificate
-  sensitive   = true
+output "worker_external_ips" {
+  description = "Внешние адреса рабочих машин"
+  value       = [for instance in yandex_compute_instance.worker : instance.network_interface[0].nat_ip_address]
 }
 
-output "node_group_id" {
-  description = "Идентификатор группы узлов"
-  value       = yandex_kubernetes_node_group.workers.id
+output "worker_internal_ips" {
+  description = "Внутренние адреса рабочих машин"
+  value       = [for instance in yandex_compute_instance.worker : instance.network_interface[0].ip_address]
+}
+
+output "ansible_inventory" {
+  description = "Путь к файлу инвентаря Ansible"
+  value       = local_file.ansible_inventory.filename
 }
 
 output "registry_id" {
@@ -37,9 +41,4 @@ output "registry_id" {
 output "registry_address" {
   description = "Адрес реестра для тегов образов"
   value       = "cr.yandex/${yandex_container_registry.main.id}"
-}
-
-output "kubeconfig_command" {
-  description = "Команда получения файла доступа к кластеру"
-  value       = "yc managed-kubernetes cluster get-credentials ${yandex_kubernetes_cluster.main.name} --external --force"
 }

@@ -26,6 +26,11 @@ spec:
         app.kubernetes.io/name: diplom-app
         app.kubernetes.io/component: frontend
     spec:
+      # Реестр приватный: ключ доступа передаётся секретом, который создаёт
+      # скрипт развёртывания перед применением манифестов.
+      imagePullSecrets:
+        - name: cr-credentials
+
       securityContext:
         runAsNonRoot: true
         runAsUser: 101
@@ -34,11 +39,11 @@ spec:
         seccompProfile:
           type: RuntimeDefault
 
-      # Поды распределяются по зонам доступности, чтобы отказ одной зоны
-      # не останавливал приложение.
+      # Реплики распределяются по разным узлам: все машины кластера находятся
+      # в одной зоне, поэтому ограничение задаётся по имени узла.
       topologySpreadConstraints:
         - maxSkew: 1
-          topologyKey: topology.kubernetes.io/zone
+          topologyKey: kubernetes.io/hostname
           whenUnsatisfiable: ScheduleAnyway
           labelSelector:
             matchLabels:

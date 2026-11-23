@@ -1,0 +1,48 @@
+# Переменные обоих этапов Terraform. Файл копируется в terraform.tfvars
+# рядом с собой; скрипты передают каждому этапу только его переменные.
+
+# Параметры облака.
+cloud_id  = "b1gXXXXXXXXXXXXXXXXX"
+folder_id = "b1gYYYYYYYYYYYYYYYYY"
+
+# Ключ сервисного аккаунта, созданного на подготовительном этапе.
+service_account_key_file = "~/.authorized_key.json"
+
+# --- Подготовительный этап: сервисные аккаунты и бакет состояния ---
+
+zone = "ru-central1-a"
+
+name_prefix       = "diplom"
+state_bucket_name = "diplom-tfstate-0000000000000"
+
+# --- Основная инфраструктура: сеть, три машины кластера, реестр образов ---
+
+zones                = ["ru-central1-a", "ru-central1-d"]
+network_cidr         = "10.10.0.0/16"
+subnet_prefix_length = 24
+
+# Образ взят из семейства Debian 11: минимальный размер диска 3 ГБ, поэтому
+# три машины укладываются в квоту на диски в зоне.
+vm_image_family     = "debian-11"
+vm_user             = "k8s"
+ssh_public_key_path = "~/.ssh/yandex.pub"
+
+# Частичная загрузка процессора снижает стоимость: 20 процентов достаточно
+# для учебного кластера.
+vm_platform_id   = "standard-v3"
+vm_core_fraction = 20
+
+# Управляющая машина не прерывается, иначе кластер теряет управление.
+master_cores     = 2
+master_memory    = 2
+master_disk_size = 4
+
+# Рабочие машины прерываемые. Основное место нужно им: на узлах размещаются
+# образы мониторинга. Квота на HDD в зоне — 20 ГБ, распределение 4 + 7 + 7
+# занимает 18 ГБ.
+worker_count     = 2
+worker_cores     = 2
+worker_memory    = 2
+worker_disk_size = 7
+
+registry_name = "diplom-registry"

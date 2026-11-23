@@ -3,13 +3,8 @@ output "terraform_service_account_id" {
   value       = yandex_iam_service_account.terraform.id
 }
 
-output "k8s_service_account_id" {
-  description = "Идентификатор сервисного аккаунта мастера Kubernetes"
-  value       = yandex_iam_service_account.k8s.id
-}
-
 output "nodes_service_account_id" {
-  description = "Идентификатор сервисного аккаунта рабочих узлов"
+  description = "Идентификатор сервисного аккаунта машин кластера"
   value       = yandex_iam_service_account.nodes.id
 }
 

@@ -15,9 +15,9 @@ variable "service_account_key_file" {
 }
 
 variable "zones" {
-  description = "Зоны доступности для подсетей и узлов кластера"
+  description = "Зоны доступности для подсетей и виртуальных машин"
   type        = list(string)
-  default     = ["ru-central1-a", "ru-central1-b", "ru-central1-d"]
+  default     = ["ru-central1-a", "ru-central1-d"]
 }
 
 variable "name_prefix" {
@@ -38,58 +38,76 @@ variable "subnet_prefix_length" {
   default     = 24
 }
 
-variable "cluster_version" {
-  description = "Версия Kubernetes"
+variable "vm_image_family" {
+  description = "Семейство образа виртуальных машин кластера"
   type        = string
-  default     = "1.31"
+  default     = "debian-11"
 }
 
-variable "node_platform_id" {
-  description = "Платформа вычислительных узлов"
+variable "vm_user" {
+  description = "Учётная запись, создаваемая в виртуальной машине"
+  type        = string
+  default     = "k8s"
+}
+
+variable "ssh_public_key_path" {
+  description = "Публичный SSH-ключ для доступа к виртуальным машинам"
+  type        = string
+  default     = "~/.ssh/yandex.pub"
+}
+
+variable "vm_platform_id" {
+  description = "Платформа виртуальных машин"
   type        = string
   default     = "standard-v3"
 }
 
-variable "node_cores" {
-  description = "Количество ядер на узел"
+variable "vm_core_fraction" {
+  description = "Гарантированная доля процессора, процент"
+  type        = number
+  default     = 20
+}
+
+variable "master_cores" {
+  description = "Количество ядер управляющей машины"
   type        = number
   default     = 2
 }
 
-variable "node_memory" {
-  description = "Объём памяти узла в гигабайтах"
+variable "master_memory" {
+  description = "Объём памяти управляющей машины в гигабайтах"
+  type        = number
+  default     = 2
+}
+
+variable "master_disk_size" {
+  description = "Размер загрузочного диска управляющей машины в гигабайтах"
   type        = number
   default     = 4
 }
 
-variable "node_core_fraction" {
-  description = "Гарантированная доля процессора, процент"
+variable "worker_count" {
+  description = "Количество рабочих машин"
   type        = number
-  default     = 50
+  default     = 2
 }
 
-variable "node_disk_size" {
-  description = "Размер загрузочного диска узла в гигабайтах"
+variable "worker_cores" {
+  description = "Количество ядер рабочей машины"
   type        = number
-  default     = 32
+  default     = 2
 }
 
-variable "node_count" {
-  description = "Количество узлов по умолчанию и минимальное в группе"
+variable "worker_memory" {
+  description = "Объём памяти рабочей машины в гигабайтах"
   type        = number
-  default     = 3
+  default     = 2
 }
 
-variable "node_max_count" {
-  description = "Максимальное количество узлов при автомасштабировании"
+variable "worker_disk_size" {
+  description = "Размер загрузочного диска рабочей машины в гигабайтах"
   type        = number
-  default     = 6
-}
-
-variable "ssh_public_key_path" {
-  description = "Публичный SSH-ключ для доступа к узлам"
-  type        = string
-  default     = "~/.ssh/yandex.pub"
+  default     = 7
 }
 
 variable "registry_name" {
@@ -98,14 +116,8 @@ variable "registry_name" {
   default     = "diplom-registry"
 }
 
-variable "k8s_service_account_name" {
-  description = "Имя сервисного аккаунта мастера, созданного на подготовительном этапе"
-  type        = string
-  default     = "diplom-k8s-agent"
-}
-
 variable "nodes_service_account_name" {
-  description = "Имя сервисного аккаунта узлов, созданного на подготовительном этапе"
+  description = "Имя сервисного аккаунта машин кластера, созданного на подготовительном этапе"
   type        = string
   default     = "diplom-k8s-nodes"
 }
