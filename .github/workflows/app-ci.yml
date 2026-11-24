@@ -67,8 +67,7 @@ jobs:
             APP_VERSION=${{ steps.meta.outputs.tag }}
             BUILD_DATE=${{ github.event.head_commit.timestamp }}
           tags: ${{ steps.meta.outputs.image }}:${{ steps.meta.outputs.tag }}
-          # Реестр Yandex Cloud принимает только манифест образа: при отправке
-          # индекса со сведениями о сборке он отвечает Cannot read manifest data.
+          # Реестр не принимает индекс со сведениями о сборке.
           provenance: false
           sbom: false
           cache-from: type=gha

@@ -46,8 +46,7 @@ jobs:
           printf '%s' "$YC_SA_KEY" > "$RUNNER_TEMP/key.json"
           chmod 600 "$RUNNER_TEMP/key.json"
 
-      # Конфигурация передаёт открытую часть ключа в метаданные машин, поэтому
-      # файл нужен на раннере. Он восстанавливается из закрытой части.
+      # Открытая часть нужна конфигурации: она попадает в метаданные машин.
       - name: Ключ доступа к машинам
         env:
           SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
@@ -131,8 +130,8 @@ jobs:
           TF_VAR_service_account_key_file: ${{ runner.temp }}/key.json
         run: terraform apply -input=false -auto-approve tfplan
 
-      # Содержимое берётся из выхода конфигурации: при применении без изменений
-      # Terraform не перезаписывает файл ресурса, и артефакт оказался бы пустым.
+      # Файл ресурса не обновляется при применении без изменений, поэтому
+      # содержимое берётся из выхода.
       - name: Инвентарь Ansible
         if: github.ref == 'refs/heads/main' && github.event_name == 'push'
         run: |

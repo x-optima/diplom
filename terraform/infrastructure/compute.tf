@@ -121,8 +121,7 @@ resource "yandex_compute_instance" "worker" {
 # Файл инвентаря для Ansible собирается из адресов, выданных облаком:
 # управляющая машина входит в группу master, рабочие — в workers.
 locals {
-  # Содержимое вынесено в отдельное значение: пайплайн получает его из выходов
-  # и не зависит от того, изменился ли файл при применении конфигурации.
+  # Содержимое вынесено в значение: пайплайн берёт его из выходов.
   ansible_inventory = templatefile("${path.module}/inventory.ini.tpl", {
     master_external = yandex_compute_instance.master.network_interface[0].nat_ip_address
     master_internal = yandex_compute_instance.master.network_interface[0].ip_address
