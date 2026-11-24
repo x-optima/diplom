@@ -46,6 +46,18 @@ jobs:
           printf '%s' "$YC_SA_KEY" > "$RUNNER_TEMP/key.json"
           chmod 600 "$RUNNER_TEMP/key.json"
 
+      # Конфигурация передаёт открытую часть ключа в метаданные машин, поэтому
+      # файл нужен на раннере. Он восстанавливается из закрытой части.
+      - name: Ключ доступа к машинам
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+        run: |
+          mkdir -p "$HOME/.ssh"
+          printf '%s\n' "$SSH_PRIVATE_KEY" > "$HOME/.ssh/yandex"
+          chmod 600 "$HOME/.ssh/yandex"
+          ssh-keygen -y -f "$HOME/.ssh/yandex" > "$HOME/.ssh/yandex.pub"
+          chmod 644 "$HOME/.ssh/yandex.pub"
+
       - name: Параметры хранилища состояния
         env:
           TF_BACKEND_ACCESS_KEY: ${{ secrets.TF_BACKEND_ACCESS_KEY }}
@@ -119,7 +131,15 @@ jobs:
           TF_VAR_service_account_key_file: ${{ runner.temp }}/key.json
         run: terraform apply -input=false -auto-approve tfplan
 
+      # Содержимое берётся из выхода конфигурации: при применении без изменений
+      # Terraform не перезаписывает файл ресурса, и артефакт оказался бы пустым.
       - name: Инвентарь Ansible
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        run: |
+          mkdir -p "$GITHUB_WORKSPACE/ansible"
+          terraform output -raw ansible_inventory_content > "$GITHUB_WORKSPACE/ansible/inventory.ini"
+
+      - name: Передача инвентаря
         if: github.ref == 'refs/heads/main' && github.event_name == 'push'
         uses: actions/upload-artifact@v4
         with:
@@ -131,6 +151,7 @@ jobs:
         if: always()
         run: |
           rm -f "$RUNNER_TEMP/key.json"
+          rm -f "$HOME/.ssh/yandex" "$HOME/.ssh/yandex.pub"
           rm -f backend.hcl
 
   # Машины создаются в предыдущем задании, установка Kubernetes выполняется

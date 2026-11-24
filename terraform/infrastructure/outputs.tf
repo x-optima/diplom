@@ -33,6 +33,11 @@ output "ansible_inventory" {
   value       = local_file.ansible_inventory.filename
 }
 
+output "ansible_inventory_content" {
+  description = "Содержимое инвентаря Ansible"
+  value       = local.ansible_inventory
+}
+
 output "registry_id" {
   description = "Идентификатор реестра образов"
   value       = yandex_container_registry.main.id
