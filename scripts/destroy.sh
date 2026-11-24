@@ -29,6 +29,10 @@ INGRESS_NAMESPACE="ingress-nginx"
 MONITORING_RELEASE="kube-prometheus-stack"
 INGRESS_RELEASE="ingress-nginx"
 
+# Реестр очищается запросами к API: команда "yc container image delete"
+# в установленной версии CLI завершается ошибкой.
+REGISTRY_API="https://container-registry.api.cloud.yandex.net/container-registry/v1"
+
 # Подтверждение полного удаления: 1 отключает вопрос, значение задаёт --yes.
 ASSUME_YES=0
 
@@ -110,6 +114,45 @@ destroy_k8s() {
     || log "Пространство имён ${APP_NAMESPACE} удалено с замечаниями"
 }
 
+# Значение переменной из файла terraform.tfvars; пусто, если строки нет.
+tfvars_value() {
+  [[ -f "${TFVARS_FILE}" ]] || return 0
+  grep -E "^[[:space:]]*$1[[:space:]]*=" "${TFVARS_FILE}" \
+    | sed 's/.*"\([^"]*\)".*/\1/' | head -1 || true
+}
+
+# Значение по умолчанию из описания переменной в конфигурации.
+variables_default() {
+  local file="${INFRA_DIR}/variables.tf"
+  [[ -f "${file}" ]] || return 0
+  sed -n "/^variable \"$1\"/,/^}/p" "${file}" \
+    | grep -E '^[[:space:]]*default' | sed 's/.*"\([^"]*\)".*/\1/' | head -1 || true
+}
+
+# Идентификаторы образов реестра, по одному в строке.
+# Отсутствие реестра даёт пустой список: очищать нечего.
+registry_image_ids() {
+  local token="$1" registry_id="$2" body code ids
+  body="$(mktemp)"
+  code="$(curl -s -o "${body}" -w '%{http_code}' \
+    -H "Authorization: Bearer ${token}" \
+    "${REGISTRY_API}/images?registryId=${registry_id}&pageSize=1000" || true)"
+  case "${code}" in
+    200)
+      ids="$(grep -oE '"id"[[:space:]]*:[[:space:]]*"[^"]+"' "${body}" \
+        | sed 's/.*"\([^"]*\)"$/\1/' | sort -u || true)"
+      ;;
+    404) ids="" ;;
+    *)
+      printf 'Ошибка: список образов не получен, ответ %s\n' "${code}" >&2
+      rm -f "${body}"
+      return 1
+      ;;
+  esac
+  rm -f "${body}"
+  printf '%s' "${ids}"
+}
+
 # Реестр не удаляется, пока в нём есть образы: API отвечает
 # "Registry ... is not empty, you must delete all images first".
 # Образы удаляются до terraform destroy, иначе удаление обрывается на реестре,
@@ -118,45 +161,62 @@ clear_registry_images() {
   command -v yc >/dev/null 2>&1 || return 0
   [[ -f "${TFVARS_FILE}" ]] || return 0
 
-  local folder_id registry_name registry_id api token images image_id code
-  folder_id="$(grep -E '^[[:space:]]*folder_id[[:space:]]*=' "${TFVARS_FILE}" | sed 's/.*"\([^"]*\)".*/\1/' || true)"
-  registry_name="$(grep -E '^[[:space:]]*registry_name[[:space:]]*=' "${TFVARS_FILE}" | sed 's/.*"\([^"]*\)".*/\1/' || true)"
-  [[ -n "${folder_id}" && -n "${registry_name}" ]] || return 0
+  local folder_id registry_name registry_id token images image_id code
+  folder_id="$(tfvars_value folder_id)"
+  registry_name="$(tfvars_value registry_name)"
+  [[ -n "${registry_name}" ]] || registry_name="$(variables_default registry_name)"
+  [[ -n "${folder_id}" ]] || return 0
 
-  registry_id="$(yc container registry get --name "${registry_name}" --folder-id "${folder_id}" --format json 2>/dev/null \
-    | grep -oE '"id"[[:space:]]*:[[:space:]]*"[^"]+"' | head -1 | sed 's/.*"\([^"]*\)"$/\1/' || true)"
+  # Идентификатор берётся из состояния: он не зависит от того, задано ли имя
+  # реестра в файле переменных. Имя используется, когда состояние недоступно.
+  registry_id="$(terraform -chdir="${INFRA_DIR}" output -raw registry_id 2>/dev/null || true)"
+  if [[ -z "${registry_id}" && -n "${registry_name}" ]]; then
+    registry_id="$(yc container registry get --name "${registry_name}" --folder-id "${folder_id}" --format json 2>/dev/null \
+      | grep -oE '"id"[[:space:]]*:[[:space:]]*"[^"]+"' | head -1 | sed 's/.*"\([^"]*\)"$/\1/' || true)"
+  fi
   if [[ -z "${registry_id}" ]]; then
-    log "Реестр ${registry_name} не найден, очистка образов не нужна"
+    log "Реестр ${registry_name:-образов} не найден, очистка образов не нужна"
     return 0
   fi
 
   command -v curl >/dev/null 2>&1 || return 0
 
-  # Команда "yc container image delete" в установленной версии CLI завершается
-  # сбоем, поэтому список и удаление выполняются запросами к API.
   token="$(yc iam create-token 2>/dev/null || true)"
-  if [[ -z "${token}" ]]; then
-    log "Не удалось получить токен, образы в реестре ${registry_name} не очищены"
-    return 0
+  [[ -n "${token}" ]] || die "не удалось получить IAM-токен для удаления образов из реестра ${registry_id}"
+  if ! images="$(registry_image_ids "${token}" "${registry_id}")"; then
+    die "список образов реестра ${registry_id} не получен: удаление оборвётся на непустом реестре"
   fi
 
-  api="https://container-registry.api.cloud.yandex.net/container-registry/v1"
-  images="$(curl -s -H "Authorization: Bearer ${token}" "${api}/images?registryId=${registry_id}" \
-    | grep -oE '"id"[[:space:]]*:[[:space:]]*"[^"]+"' | sed 's/.*"\([^"]*\)"$/\1/' | sort -u || true)"
   if [[ -z "${images}" ]]; then
-    log "Реестр ${registry_name} пуст"
+    log "Реестр ${registry_name:-${registry_id}} пуст"
     return 0
   fi
 
+  local deleted=0 failed=0
   for image_id in ${images}; do
-    log "Удаление образа ${image_id} из реестра ${registry_name}"
     code="$(curl -s -o /dev/null -w '%{http_code}' -X DELETE \
-      -H "Authorization: Bearer ${token}" "${api}/images/${image_id}" || true)"
+      -H "Authorization: Bearer ${token}" "${REGISTRY_API}/images/${image_id}" || true)"
     case "${code}" in
-      200 | 204) log "Образ ${image_id} удалён" ;;
-      *) log "Образ ${image_id} удалить не удалось, ответ ${code}" ;;
+      200 | 204) deleted=$((deleted + 1)) ;;
+      *)
+        failed=$((failed + 1))
+        log "Образ ${image_id} удалить не удалось, ответ ${code}"
+        ;;
     esac
   done
+  log "Удалено образов: ${deleted}, с ошибками: ${failed}"
+
+  # Освобождение реестра выполняется не сразу: после ответа на удаление список
+  # ещё содержит образы, и terraform destroy получает отказ "is not empty".
+  for _ in $(seq 1 30); do
+    if [[ -z "$(registry_image_ids "${token}" "${registry_id}" || true)" ]]; then
+      log "Реестр ${registry_name:-${registry_id}} очищен"
+      return 0
+    fi
+    sleep 4
+  done
+
+  die "в реестре ${registry_name:-${registry_id}} остались образы: удаление остановлено, повторите запуск скрипта"
 }
 
 destroy_infra() {
@@ -164,13 +224,15 @@ destroy_infra() {
   [[ -f "${INFRA_DIR}/backend.hcl" ]] \
     || die "не найден terraform/infrastructure/backend.hcl: состояние инфраструктуры хранится в бакете, без файла доступа удаление невозможно"
 
-  clear_registry_images
-
   local vars
   vars="$(stage_vars_file "${INFRA_VARS}")"
 
   log "Удаление машин кластера, сети и реестра образов"
   terraform -chdir="${INFRA_DIR}" init -input=false -backend-config=backend.hcl
+
+  # Очистка идёт после init: идентификатор реестра читается из состояния.
+  clear_registry_images
+
   terraform -chdir="${INFRA_DIR}" destroy -auto-approve -var-file="${vars}"
   rm -f "${vars}"
 }
