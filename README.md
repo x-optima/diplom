@@ -348,7 +348,8 @@ kubectl -n app get deployment,pods,service,ingress
 | Alertmanager | `kubectl port-forward -n monitoring svc/kube-prometheus-stack-alertmanager 9093:9093` |
 
 Имена `<адрес>.nip.io` преобразуются в IP автоматически, собственный домен
-не требуется.
+не требуется. Если внешних адресов у рабочих узлов несколько, скрипт берёт
+первый, который отвечает по HTTP.
 
 #### Панель Grafana
 

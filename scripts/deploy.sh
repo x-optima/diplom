@@ -294,11 +294,23 @@ master_ip() {
 }
 
 # Адрес для обращения к приложению и Grafana: первый внешний адрес рабочего
-# узла, на котором размещён контроллер.
+# узла, на котором размещён контроллер. Внешние адреса выдаются машинам
+# независимо друг от друга, и часть из них может быть недоступна извне,
+# поэтому выбирается первый, отвечающий по HTTP.
 ingress_ip() {
-  local ip
-  ip="$(terraform -chdir="${INFRA_DIR}" output -json worker_external_ips 2>/dev/null \
-    | tr -d '[]" ' | cut -d, -f1 || true)"
+  local ips ip
+  ips="$(terraform -chdir="${INFRA_DIR}" output -json worker_external_ips 2>/dev/null \
+    | tr -d '[]" ' | tr ',' '\n' || true)"
+
+  for ip in ${ips}; do
+    [[ -n "${ip}" ]] || continue
+    if curl -s --max-time 3 -o /dev/null "http://${ip}/"; then
+      printf '%s' "${ip}"
+      return 0
+    fi
+  done
+
+  ip="$(printf '%s' "${ips}" | head -n1)"
   [[ -n "${ip}" ]] && printf '%s' "${ip}" && return 0
   master_ip
 }
@@ -333,17 +345,11 @@ monitoring() {
   kubectl -n "${MONITORING_NAMESPACE}" get pods
 }
 
-# Отдельный сборщик buildx: он держит слои в своём хранилище и не обращается к
-# кешу демона, где остаются сведения о реестрах прошлых сборок. Иначе отправка
-# в новый реестр пытается переиспользовать слои удалённого и завершается
-# ошибкой Registry not found.
-BUILDX_BUILDER="diplom-builder"
-
 build_and_push() {
   require_tool docker
   require_tool yc
 
-  local registry_id image
+  local registry_id image builder
 
   docker buildx version >/dev/null 2>&1 \
     || die "не найден плагин buildx (пакет docker-buildx-plugin)"
@@ -351,17 +357,23 @@ build_and_push() {
   registry_id="$(terraform -chdir="${INFRA_DIR}" output -raw registry_id)"
   image="cr.yandex/${registry_id}/${APP_NAME}:${APP_VERSION}"
 
+  # Кеш сборщика хранит сведения о том, из какого реестра взяты слои образа.
+  # Если реестр пересоздан, старый кеш заставляет сборщик обращаться к нему при
+  # отправке, и та завершается ошибкой Registry not found. Имя сборщика включает
+  # идентификатор реестра, поэтому для нового реестра создаётся чистый сборщик.
+  builder="diplom-builder-${registry_id}"
+
   log "Сборка образа ${image}"
   yc container registry configure-docker >/dev/null
 
-  if ! docker buildx inspect "${BUILDX_BUILDER}" >/dev/null 2>&1; then
-    docker buildx create --name "${BUILDX_BUILDER}" --driver docker-container >/dev/null
+  if ! docker buildx inspect "${builder}" >/dev/null 2>&1; then
+    docker buildx create --name "${builder}" --driver docker-container >/dev/null
   fi
 
   # Реестр принимает манифест схемы v2, поэтому манифесты проверки
   # происхождения и состава пакетов не создаются.
   docker buildx build \
-    --builder "${BUILDX_BUILDER}" \
+    --builder "${builder}" \
     --provenance=false \
     --sbom=false \
     --build-arg "APP_VERSION=${APP_VERSION}" \
