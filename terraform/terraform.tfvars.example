@@ -27,6 +27,10 @@ vm_image_family     = "debian-11"
 vm_user             = "k8s"
 ssh_public_key_path = "~/.ssh/yandex.pub"
 
+# Сервисный аккаунт машин кластера создаётся на подготовительном этапе под этим
+# именем, основная конфигурация находит его по нему.
+nodes_service_account_name = "diplom-k8s-nodes"
+
 # Частичная загрузка процессора снижает стоимость: 20 процентов достаточно
 # для учебного кластера.
 vm_platform_id   = "standard-v3"
