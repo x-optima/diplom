@@ -129,6 +129,54 @@ variables_default() {
     | grep -E '^[[:space:]]*default' | sed 's/.*"\([^"]*\)".*/\1/' | head -1 || true
 }
 
+# Префикс имён ресурсов проекта: по нему названы машины, сеть и реестр.
+project_prefix() {
+  local prefix
+  prefix="$(tfvars_value name_prefix)"
+  printf '%s' "${prefix:-diplom}"
+}
+
+# Остались ли в каталоге машины, диски, сети или реестры проекта.
+# Проверка нужна, когда файла доступа к состоянию уже нет: тогда удалять
+# нечего и завершаться ошибкой из-за отсутствующего backend.hcl незачем.
+infra_resources_left() {
+  command -v yc >/dev/null 2>&1 || return 1
+  local folder_id prefix list
+  folder_id="$(tfvars_value folder_id)"
+  prefix="$(project_prefix)"
+  [[ -n "${folder_id}" ]] || return 1
+
+  for list in "compute instance list" "compute disk list" "vpc network list" "container registry list"; do
+    if yc ${list} --folder-id "${folder_id}" --format json 2>/dev/null \
+      | grep -qE "\"name\"[[:space:]]*:[[:space:]]*\"${prefix}"; then
+      return 0
+    fi
+  done
+  return 1
+}
+
+# Остались ли в каталоге сервисные аккаунты или бакет состояния проекта.
+bootstrap_resources_left() {
+  command -v yc >/dev/null 2>&1 || return 1
+  local folder_id prefix bucket
+  folder_id="$(tfvars_value folder_id)"
+  prefix="$(project_prefix)"
+  bucket="$(tfvars_value state_bucket_name)"
+  [[ -n "${folder_id}" ]] || return 1
+
+  if yc iam service-account list --folder-id "${folder_id}" --format json 2>/dev/null \
+    | grep -qE "\"name\"[[:space:]]*:[[:space:]]*\"${prefix}"; then
+    return 0
+  fi
+
+  [[ -n "${bucket}" ]] || bucket="${prefix}"
+  if yc storage bucket list --folder-id "${folder_id}" --format json 2>/dev/null \
+    | grep -qE "\"name\"[[:space:]]*:[[:space:]]*\"${bucket}"; then
+    return 0
+  fi
+  return 1
+}
+
 # Идентификаторы образов реестра, по одному в строке.
 # Отсутствие реестра даёт пустой список: очищать нечего.
 registry_image_ids() {
@@ -221,8 +269,16 @@ clear_registry_images() {
 
 destroy_infra() {
   require_tool terraform
-  [[ -f "${INFRA_DIR}/backend.hcl" ]] \
-    || die "не найден terraform/infrastructure/backend.hcl: состояние инфраструктуры хранится в бакете, без файла доступа удаление невозможно"
+
+  # Файл доступа к состоянию снимается вместе с бакетом на этапе bootstrap.
+  # Если его нет и ресурсов в каталоге не осталось, удалять нечего.
+  if [[ ! -f "${INFRA_DIR}/backend.hcl" ]]; then
+    if ! infra_resources_left; then
+      log "Файла доступа к состоянию нет, ресурсов инфраструктуры в каталоге тоже нет: этап пропущен"
+      return 0
+    fi
+    die "не найден terraform/infrastructure/backend.hcl: состояние инфраструктуры хранится в бакете, без файла доступа удаление невозможно"
+  fi
 
   local vars
   vars="$(stage_vars_file "${INFRA_VARS}")"
@@ -240,13 +296,29 @@ destroy_infra() {
 destroy_bootstrap() {
   require_tool terraform
 
-  local vars
-  vars="$(stage_vars_file "${BOOTSTRAP_VARS}")"
+  # Состояние подготовительного этапа хранится локально. Без него terraform
+  # не знает о созданных ресурсах, и этап сводится к удалению локальных файлов.
+  local state_file has_state=0
+  for state_file in "${BOOTSTRAP_DIR}/terraform.tfstate" "${BOOTSTRAP_DIR}/terraform.tfstate.backup"; do
+    if [[ -f "${state_file}" ]]; then
+      has_state=1
+    fi
+  done
 
-  log "Удаление сервисных аккаунтов и бакета состояния"
-  terraform -chdir="${BOOTSTRAP_DIR}" init -input=false
-  terraform -chdir="${BOOTSTRAP_DIR}" destroy -auto-approve -var-file="${vars}"
-  rm -f "${vars}"
+  if ((has_state == 1)); then
+    local vars
+    vars="$(stage_vars_file "${BOOTSTRAP_VARS}")"
+
+    log "Удаление сервисных аккаунтов и бакета состояния"
+    terraform -chdir="${BOOTSTRAP_DIR}" init -input=false
+    terraform -chdir="${BOOTSTRAP_DIR}" destroy -auto-approve -var-file="${vars}"
+    rm -f "${vars}"
+  else
+    log "Локального состояния подготовительного этапа нет: ресурсы не удаляются"
+    if bootstrap_resources_left; then
+      log "В каталоге остались сервисные аккаунты или бакет проекта: удалите их командами yc iam service-account delete и yc storage bucket delete"
+    fi
+  fi
 
   # Ключ доступа принадлежал удалённому сервисному аккаунту и больше не нужен.
   if [[ -f "${INFRA_DIR}/backend.hcl" ]]; then
@@ -256,9 +328,10 @@ destroy_bootstrap() {
 
   # В состоянии подготовительного этапа лежит закрытая часть ключа сервисного
   # аккаунта, в резервной копии — тоже. Аккаунт удалён, файлы не нужны.
-  local state_file
   for state_file in "${BOOTSTRAP_DIR}/terraform.tfstate" "${BOOTSTRAP_DIR}/terraform.tfstate.backup"; do
-    [[ -f "${state_file}" ]] && rm -f "${state_file}"
+    if [[ -f "${state_file}" ]]; then
+      rm -f "${state_file}"
+    fi
   done
   log "Локальное состояние подготовительного этапа удалено"
 
@@ -339,7 +412,13 @@ main() {
   fi
 
   if [[ "${stage}" == "all" ]]; then
-    confirm_full_destruction
+    # Подтверждение запрашивается, только когда в каталоге есть что удалять.
+    # Если ресурсов проекта не осталось, скрипт снимает локальные файлы.
+    if infra_resources_left || bootstrap_resources_left; then
+      confirm_full_destruction
+    else
+      log "Ресурсов проекта в каталоге нет, удаление затрагивает только локальные файлы"
+    fi
   fi
 
   case "${stage}" in
