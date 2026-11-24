@@ -1,3 +1,5 @@
+# Реестр образов. Адрес для тегов выдаёт выход registry_address в виде
+# cr.yandex/<идентификатор>.
 resource "yandex_container_registry" "main" {
   name      = var.registry_name
   folder_id = var.folder_id

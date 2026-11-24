@@ -1,10 +1,13 @@
 <!DOCTYPE html>
+<!-- Статическая страница приложения. Отдаётся nginx из того же образа,
+     версия подставляется скриптом в блок с меткой образа. -->
 <html lang="ru">
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Дипломный проект — Kubernetes в Yandex Cloud</title>
     <style>
+        /* Цвета вынесены в переменные: тёмная тема задаётся в одном месте. */
         :root {
             --background: #0f172a;
             --surface: #1e293b;
@@ -153,6 +156,8 @@
 </main>
 
 <script>
+    /* Метку образа пишет Dockerfile при сборке. Кеш отключён, иначе после
+       обновления на странице оставалась бы прежняя версия. */
     fetch('/version.txt', { cache: 'no-store' })
         .then(function (response) {
             return response.ok ? response.text() : Promise.reject();

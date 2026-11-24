@@ -1,3 +1,6 @@
+# Переменные основной конфигурации. Значения задаются в terraform/terraform.tfvars,
+# в пайплайне приходят через TF_VAR_*.
+
 variable "cloud_id" {
   description = "Идентификатор облака"
   type        = string
@@ -14,6 +17,7 @@ variable "service_account_key_file" {
   default     = "../bootstrap/terraform-sa-key.json"
 }
 
+# Сеть: зоны задают набор подсетей, длина префикса — размер каждой из них.
 variable "zones" {
   description = "Зоны доступности для подсетей и виртуальных машин"
   type        = list(string)
@@ -38,6 +42,8 @@ variable "subnet_prefix_length" {
   default     = 24
 }
 
+# Машины кластера: образ, учётная запись и платформа. Доля процессора задаётся
+# в процентах и влияет на стоимость сильнее числа ядер.
 variable "vm_image_family" {
   description = "Семейство образа виртуальных машин кластера"
   type        = string
@@ -68,6 +74,8 @@ variable "vm_core_fraction" {
   default     = 20
 }
 
+# Ресурсы машин. Диски заданы отдельно: у управляющей машины нет рабочих
+# нагрузок, поэтому ей хватает меньшего размера.
 variable "master_cores" {
   description = "Количество ядер управляющей машины"
   type        = number

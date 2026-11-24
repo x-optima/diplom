@@ -1,3 +1,7 @@
+# Значения используют скрипт развёртывания и основная конфигурация:
+# идентификатор аккаунта нужен для ключа доступа к бакету, имя бакета —
+# для backend.hcl. Закрытая часть ключа в выходы не попадает.
+
 output "terraform_service_account_id" {
   description = "Идентификатор сервисного аккаунта Terraform"
   value       = yandex_iam_service_account.terraform.id

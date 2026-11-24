@@ -13,5 +13,7 @@ master
 workers
 
 [all:vars]
+# Пакеты на машинах рассчитаны на системный python, ключ доступа к машинам
+# один для всех узлов.
 ansible_python_interpreter=/usr/bin/python3
 ansible_ssh_private_key_file=~/.ssh/yandex

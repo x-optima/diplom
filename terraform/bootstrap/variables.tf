@@ -1,3 +1,6 @@
+# Переменные подготовительного этапа: облако, каталог и параметры хранилища
+# состояния. Значения задаются в terraform/terraform.tfvars.
+
 variable "cloud_id" {
   description = "Идентификатор облака Yandex Cloud"
   type        = string

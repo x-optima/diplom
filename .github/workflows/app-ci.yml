@@ -8,6 +8,7 @@ on:
     branches: [main]
   workflow_dispatch:
 
+# Имена совпадают с манифестами в k8s/app: по ним задание обновляет образ.
 env:
   IMAGE_NAME: diplom-app
   NAMESPACE: app
@@ -98,6 +99,8 @@ jobs:
   deploy:
     name: Развёртывание в кластере
     runs-on: ubuntu-latest
+    # Образ к этому моменту уже в реестре, поэтому в кластер попадает
+    # конкретная метка, а не пересобранный образ.
     needs: build
     if: github.event_name != 'pull_request'
 

@@ -1,3 +1,5 @@
+# Подготовительный этап: два сервисных аккаунта и бакет для файла состояния.
+# Роли выдаются на каталог, прав суперпользователя ни у одного нет.
 locals {
   terraform_sa_name = "${var.name_prefix}-terraform"
   nodes_sa_name     = "${var.name_prefix}-k8s-nodes"

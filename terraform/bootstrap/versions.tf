@@ -1,6 +1,8 @@
 terraform {
   required_version = ">= 1.9.0"
 
+  # yandex — облачные ресурсы, local — запись ключа на диск,
+  # random — суффикс имени бакета.
   required_providers {
     yandex = {
       source  = "yandex-cloud/yandex"
@@ -17,6 +19,8 @@ terraform {
   }
 }
 
+# Пустой путь к ключу оставляет авторизацию из окружения: для первого запуска
+# ключа сервисного аккаунта ещё нет, его создаёт этот же этап.
 provider "yandex" {
   cloud_id                 = var.cloud_id
   folder_id                = var.folder_id

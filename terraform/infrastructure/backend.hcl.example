@@ -1,3 +1,6 @@
+# Параметры хранилища состояния для terraform init -backend-config.
+# Шаблон заполняется скриптом развёртывания: имя бакета берётся из выходов
+# подготовительного этапа, ключи доступа создаются там же.
 bucket = "diplom-tfstate-0000000000000"
 key    = "infrastructure/terraform.tfstate"
 region = "ru-central1"
@@ -6,9 +9,13 @@ endpoints = {
   s3 = "https://storage.yandexcloud.net"
 }
 
+# Статический ключ доступа к бакету. Ключ сервисного аккаунта из
+# terraform-sa-key.json для S3 не подходит.
 access_key = "YCAJXXXXXXXXXXXXXXXXXXXX"
 secret_key = "YCPXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
 
+# Object Storage не поддерживает часть вызовов AWS API, которые выполняет
+# провайдер S3 при проверке окружения.
 skip_region_validation      = true
 skip_credentials_validation = true
 skip_requesting_account_id  = true

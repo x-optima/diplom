@@ -17,6 +17,8 @@ state_bucket_name = "diplom-tfstate-0000000000000"
 
 # --- Основная инфраструктура: сеть, три машины кластера, реестр образов ---
 
+# Подсети создаются в обеих зонах, машины — в первой: из ru-central1-d нет
+# доступа к registry.k8s.io, и узлы не скачивают образы.
 zones                = ["ru-central1-a", "ru-central1-d"]
 network_cidr         = "10.10.0.0/16"
 subnet_prefix_length = 24

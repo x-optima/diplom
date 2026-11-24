@@ -1,10 +1,17 @@
+# Переменные подготовительного этапа. Скрипт развёртывания передаёт их
+# из общего файла terraform/terraform.tfvars.
+
 cloud_id  = "b1gXXXXXXXXXXXXXXXXX"
 folder_id = "b1gYYYYYYYYYYYYYYYYY"
 zone      = "ru-central1-a"
 
 # Ключ сервисного аккаунта с правами администратора каталога.
-# Используется только на подготовительном этапе.
+# Используется только на подготовительном этапе. Значение можно оставить
+# пустым: тогда применяется авторизация текущей учётной записи yc.
 service_account_key_file = "~/.yc/authorized_key.json"
 
-name_prefix       = "diplom"
+name_prefix = "diplom"
+
+# Имя бакета уникально во всём Object Storage. Пустое значение даёт имя
+# со случайным суффиксом.
 state_bucket_name = "diplom-tfstate-0000000000000"

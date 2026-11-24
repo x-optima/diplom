@@ -12,6 +12,8 @@ on:
       - "terraform/**"
   workflow_dispatch:
 
+# TF_INPUT отключает запросы подтверждения, TF_IN_AUTOMATION убирает
+# подсказки для ручной работы.
 env:
   TF_IN_AUTOMATION: "true"
   TF_INPUT: "0"
