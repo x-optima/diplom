@@ -168,6 +168,8 @@ cp terraform/terraform.tfvars.example terraform/terraform.tfvars
 Вывод `terraform apply`: сервисные аккаунты, бакет состояния с
 версионированием, сеть с подсетями, три машины и реестр образов.
 
+![Этап 1. Скриншот 0](screenshots/scr1_0.png)
+
 ![Этап 1. Скриншот 1](screenshots/scr1_1.png)
 
 ## Этап 2. Кластер Kubernetes
@@ -213,12 +215,17 @@ kubectl get pods --all-namespaces
 #### Состав кластера
 
 Три узла в состоянии `Ready`, версия v1.33.13, внутренние адреса и роли.
+Имена узлов совпадают с идентификаторами машин в облаке: kubelet берёт имя
+из метаданных, а не из имени ресурса Terraform.
 
 ![Этап 2. Скриншот 1](screenshots/scr2_1.png)
 
 #### Поды всех пространств имён
 
-Поды приложения, мониторинга и системных компонентов в состоянии `Running`.
+Поды приложения, мониторинга и системных компонентов в состоянии `Running`:
+две реплики приложения, Prometheus, Grafana, Alertmanager, node-exporter,
+kube-state-metrics, контроллер ingress, flannel, CoreDNS и компоненты
+управляющей машины.
 
 ![Этап 2. Скриншот 2](screenshots/scr2_2.png)
 
@@ -238,9 +245,9 @@ kubectl get pods --all-namespaces
 на странице.
 
 ```bash
-docker build --build-arg APP_VERSION=v1.0.0 -t cr.yandex/<идентификатор>/diplom-app:v1.0.0 app/
+docker build --build-arg APP_VERSION=v1.0.0 -t cr.yandex/crp3f3a604tuoca29qmd/diplom-app:v1.0.0 app/
 yc container registry configure-docker
-docker push cr.yandex/<идентификатор>/diplom-app:v1.0.0
+docker push cr.yandex/crp3f3a604tuoca29qmd/diplom-app:v1.0.0
 ```
 
 Адрес реестра выводится Terraform:
@@ -249,7 +256,7 @@ docker push cr.yandex/<идентификатор>/diplom-app:v1.0.0
 terraform -chdir=terraform/infrastructure output registry_address
 ```
 
-Собранный образ: `cr.yandex/<идентификатор реестра>/diplom-app:latest`.
+Собранный образ: `cr.yandex/crp3f3a604tuoca29qmd/diplom-app:latest`.
 Метка `latest` обновляется при коммите в основную ветку и при выпуске тега.
 
 В пайплайне образ получает две метки: неизменяемую (`sha-<7 символов
@@ -259,7 +266,7 @@ terraform -chdir=terraform/infrastructure output registry_address
 
 #### Страница приложения
 
-Адрес `app.<внешний IP рабочего узла>.nip.io`, в подвале страницы — версия
+Адрес `app.62.84.117.127.nip.io`, в подвале страницы — версия
 образа из файла `/usr/share/nginx/html/version.txt`.
 
 ![Этап 3. Скриншот 1](screenshots/scr3_1.png)
@@ -302,7 +309,7 @@ Alertmanager, Grafana, node-exporter, kube-state-metrics, набор прави�
 
 ```bash
 helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
-GRAFANA_HOST="grafana.<внешний IP>.nip.io" \
+GRAFANA_HOST="grafana.62.84.117.127.nip.io" \
   envsubst '${GRAFANA_HOST}' < k8s/monitoring/kube-prometheus-values.yaml \
   | helm upgrade --install kube-prometheus-stack \
       prometheus-community/kube-prometheus-stack \
@@ -342,12 +349,12 @@ kubectl -n app get deployment,pods,service,ingress
 
 | Ресурс | Адрес |
 |---|---|
-| Приложение | `http://app.<внешний IP рабочего узла>.nip.io/` |
-| Grafana | `http://grafana.<внешний IP рабочего узла>.nip.io/` |
+| Приложение | `http://app.62.84.117.127.nip.io/` |
+| Grafana | `http://grafana.62.84.117.127.nip.io/` |
 | Prometheus | `kubectl port-forward -n monitoring svc/kube-prometheus-stack-prometheus 9090:9090` |
 | Alertmanager | `kubectl port-forward -n monitoring svc/kube-prometheus-stack-alertmanager 9093:9093` |
 
-Имена `<адрес>.nip.io` преобразуются в IP автоматически, собственный домен
+Имена `62.84.117.127.nip.io` преобразуются в IP автоматически, собственный домен
 не требуется. Если внешних адресов у рабочих узлов несколько, скрипт берёт
 первый, который отвечает по HTTP.
 
@@ -356,13 +363,6 @@ kubectl -n app get deployment,pods,service,ingress
 Дашборд кластера: загрузка узлов, состояние подов, расход памяти и диска.
 
 ![Этап 4. Скриншот 1](screenshots/scr4_1.png)
-
-#### Доступ по HTTP
-
-Страница входа Grafana по адресу `grafana.<внешний IP рабочего узла>.nip.io`,
-соединение без TLS.
-
-![Этап 4. Скриншот 2](screenshots/scr4_2.png)
 
 ## Этап 5. Terraform в пайплайне
 

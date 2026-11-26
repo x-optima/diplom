@@ -222,6 +222,48 @@ bootstrap() {
   rm -f "${vars}"
 }
 
+# Инициализация хранилища состояния. Параметры бэкенда меняются, когда
+# подготовительный этап создаёт новый бакет: в кэше .terraform остаются
+# прежние значения, и terraform отказывается работать, пока не выбран способ
+# переноса. Сначала состояние переносится из прежнего хранилища, а если оно
+# уже удалено — работа начинается с чистого листа.
+init_infra() {
+  local output_file status
+
+  output_file="$(mktemp)"
+
+  if terraform -chdir="${INFRA_DIR}" init -input=false -backend-config=backend.hcl \
+      >"${output_file}" 2>&1; then
+    cat "${output_file}"
+    rm -f "${output_file}"
+    return 0
+  fi
+
+  # Любая другая причина сбоя: нет сети, неверный ключ доступа, ошибка в
+  # конфигурации. Показываем вывод terraform без изменений.
+  if ! grep -qi 'Backend configuration changed' "${output_file}"; then
+    cat "${output_file}" >&2
+    rm -f "${output_file}"
+    die "не удалось инициализировать terraform в ${INFRA_DIR}"
+  fi
+
+  log "Параметры хранилища состояния изменились, переношу состояние в новый бакет"
+  if terraform -chdir="${INFRA_DIR}" init -input=false -migrate-state -force-copy \
+      -backend-config=backend.hcl >"${output_file}" 2>&1; then
+    cat "${output_file}"
+    rm -f "${output_file}"
+    return 0
+  fi
+
+  log "Прежнее хранилище недоступно, состояние начинается с чистого листа"
+  status=0
+  terraform -chdir="${INFRA_DIR}" init -input=false -reconfigure \
+    -backend-config=backend.hcl >"${output_file}" 2>&1 || status=$?
+  cat "${output_file}" >&2
+  rm -f "${output_file}"
+  (( status == 0 )) || die "не удалось подключиться к бакету состояния: см. сообщение terraform выше"
+}
+
 infra() {
   require_tool terraform
   [[ -f "${TFVARS_FILE}" ]] || die "нет файла terraform/terraform.tfvars: скопируйте его из terraform/terraform.tfvars.example"
@@ -231,7 +273,7 @@ infra() {
   vars="$(stage_vars_file "${INFRA_VARS}")"
 
   log "Создание сети, машин кластера и реестра образов"
-  terraform -chdir="${INFRA_DIR}" init -input=false -backend-config=backend.hcl
+  init_infra
   terraform -chdir="${INFRA_DIR}" apply -auto-approve -var-file="${vars}"
   rm -f "${vars}"
 }

@@ -119,6 +119,9 @@ alertmanager:
         #   - url: "https://example.com/alerts"
         #     send_resolved: true
         # или telegram_configs с токеном бота и идентификатором чата.
+      # Служебный получатель для алерта Watchdog: чарт добавляет его
+      # в маршрут с именем "null".
+      - name: "null"
 
     inhibit_rules:
       - source_matchers: ["severity = critical"]

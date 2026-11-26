@@ -124,8 +124,9 @@
           - python3-apt
         state: present
 
-    # Ключ проверяет подписи пакетов Kubernetes. Рабочим машинам репозиторий
-    # не настраивается, но ключ им не мешает.
+    # Ключ проверяет подписи пакетов Kubernetes. Нужен только управляющей
+    # машине: рабочие пакеты получают готовыми файлами, а pkgs.k8s.io
+    # из их зон недоступен — скачивание ключа там обрывается по таймауту.
     - name: Ключ подписи репозитория Kubernetes
       shell: |
         set -e
@@ -134,6 +135,7 @@
           | gpg --dearmor -o /etc/apt/keyrings/kubernetes-apt-keyring.gpg
       args:
         creates: /etc/apt/keyrings/kubernetes-apt-keyring.gpg
+      when: inventory_hostname in groups['master']
 
     # Репозиторий Kubernetes нужен только управляющей машине: у рабочих
     # машин внешний доступ к нему может быть закрыт, пакеты им передаются
@@ -331,11 +333,14 @@
   gather_facts: false
 
   tasks:
-    - name: Выгрузка образов pause и kube-proxy
+    # Сеть pod-ов на рабочих машинах поднимает kube-flannel, поэтому его
+    # образы тоже нужны: ghcr.io с воркеров недоступен так же, как
+    # registry.k8s.io, и без переноса узлы остаются NotReady.
+    - name: Выгрузка образов pause, kube-proxy и flannel
       shell: |
         set -e
         refs=$(ctr -n k8s.io images ls -q \
-          | grep -E 'registry\.k8s\.io/(pause|kube-proxy):' | sort -u)
+          | grep -E 'registry\.k8s\.io/(pause|kube-proxy):|ghcr\.io/flannel-io/flannel' | sort -u)
         ctr -n k8s.io images export /tmp/worker-images.tar $refs
       changed_when: true
 
@@ -408,17 +413,17 @@
       register: containerd_images
       changed_when: false
 
-    - name: Копирование образов pause и kube-proxy
+    - name: Копирование образов pause, kube-proxy и flannel
       copy:
         src: /tmp/worker-images/worker-images.tar
         dest: /tmp/worker-images.tar
         mode: '0644'
-      when: "'registry.k8s.io/pause:3.10.2' not in containerd_images.stdout"
+      when: "'ghcr.io/flannel-io/flannel' not in containerd_images.stdout"
 
     - name: Импорт образов в containerd
       command: ctr -n k8s.io images import /tmp/worker-images.tar
       changed_when: true
-      when: "'registry.k8s.io/pause:3.10.2' not in containerd_images.stdout"
+      when: "'ghcr.io/flannel-io/flannel' not in containerd_images.stdout"
 
     - name: Включение kubelet
       systemd:
