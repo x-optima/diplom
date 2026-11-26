@@ -52,3 +52,5 @@ worker_memory    = 2
 worker_disk_size = 7
 
 registry_name = "diplom-registry"
+
+# Проверка плана в pull request.
